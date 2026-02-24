@@ -1,0 +1,21 @@
+# Ignore the binary files
+*.exe
+*.exe~
+*.out
+*.o
+
+# Ignore the Go build directory
+/bin/
+
+# Ignore the vendor directory
+/vendor/
+
+# Ignore the .env file
+.env
+
+# Ignore IDE specific files
+.idea/
+.vscode/
+
+# Ignore logs
+*.log
