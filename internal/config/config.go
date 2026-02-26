@@ -22,7 +22,7 @@ func LoadConfig() *Config {
 
 	return &Config{
 		Port:   getEnv("PORT", "8080"),
-		DSN:    getEnv("DATABASE_URL", "host=localhost user=postgres password=hans989 dbname=config_service_db port=5432 sslmode=disable"),
+		DSN:    getEnv("DATABASE_URL", "host=localhost user=postgres password=Hans989! dbname=config_service_db port=5432 sslmode=disable"),
 		APIKey: getEnv("API_KEY", "secret-key"),
 		AppEnv: getEnv("APP_ENV", "development"),
 	}

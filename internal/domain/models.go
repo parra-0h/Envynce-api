@@ -8,7 +8,7 @@ import (
 
 type Application struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
-	Name      string         `gorm:"uniqueIndex;not null" json:"name" validate:"required"`
+	Name      string         `gorm:"uniqueIndex:idx_applications_name" json:"name" validate:"required"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -16,7 +16,7 @@ type Application struct {
 
 type Environment struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
-	Name      string         `gorm:"uniqueIndex;not null" json:"name" validate:"required"`
+	Name      string         `gorm:"uniqueIndex:uni_environments_name;not null" json:"name" validate:"required"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
