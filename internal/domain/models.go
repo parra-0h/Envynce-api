@@ -61,6 +61,7 @@ type Configuration struct {
 	EnvironmentID uint           `gorm:"not null;index:idx_config_lookup" json:"environment_id" validate:"required"`
 	Version       int            `gorm:"not null;default:1" json:"version"`
 	Status        string         `gorm:"not null;default:'active'" json:"status"` // active, archived
+	CreatedBy     string         `json:"created_by_name"`
 	Description   string         `gorm:"type:text" json:"description"`
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
@@ -81,6 +82,43 @@ type ConfigVersion struct {
 	ChangedByUserID uint      `json:"changed_by_user_id"`
 	ChangedByName   string    `json:"changed_by_name"`
 	CreatedAt       time.Time `json:"created_at"`
+}
+
+// --- Audit Log ---
+
+type AuditLog struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Action    string    `json:"action"` // CREATE, UPDATE, DELETE
+	Entity    string    `json:"entity"` // Application, Environment, Configuration
+	EntityID  uint      `json:"entity_id"`
+	OldValue  string    `gorm:"type:text" json:"old_value"`
+	NewValue  string    `gorm:"type:text" json:"new_value"`
+	ChangedBy string    `json:"changed_by"` // API Key or User identifier
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// --- API Key ---
+
+type APIKey struct {
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	Name      string         `json:"name"`
+	Key       string         `gorm:"uniqueIndex;not null" json:"key"`
+	Prefix    string         `json:"prefix"`
+	Status    string         `json:"status"` // active, revoked
+	LastUsed  *time.Time     `json:"last_used"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// --- Dashboard Stats ---
+
+type DashboardStats struct {
+	TotalApps         int64      `json:"total_apps"`
+	TotalConfigs      int64      `json:"total_configs"`
+	ActiveConfigs     int64      `json:"active_configs"`
+	TotalEnvironments int64      `json:"total_environments"`
+	RecentUpdates     []AuditLog `json:"recent_updates"`
 }
 
 // --- DTOs ---
