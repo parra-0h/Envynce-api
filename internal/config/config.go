@@ -8,10 +8,10 @@ import (
 )
 
 type Config struct {
-	Port   string
-	DSN    string
-	APIKey string
-	AppEnv string
+	Port      string
+	DSN       string
+	AppEnv    string
+	JWTSecret string
 }
 
 func LoadConfig() *Config {
@@ -21,10 +21,10 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		Port:   getEnv("PORT", "8080"),
-		DSN:    getEnv("DATABASE_URL", "host=localhost user=postgres password=Hans989! dbname=config_service_db port=5432 sslmode=disable"),
-		APIKey: getEnv("API_KEY", "secret-key"),
-		AppEnv: getEnv("APP_ENV", "development"),
+		Port:      getEnv("PORT", "8080"),
+		DSN:       getEnv("DATABASE_URL", "host=localhost user=postgres password=postgres dbname=envynce_db port=5432 sslmode=disable"),
+		AppEnv:    getEnv("APP_ENV", "development"),
+		JWTSecret: getEnv("JWT_SECRET", "change-me-in-production"),
 	}
 }
 

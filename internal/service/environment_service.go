@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/hans/config-service/internal/domain"
 	"github.com/hans/config-service/internal/repository"
@@ -24,9 +25,34 @@ func (s *EnvironmentService) GetAllEnvironments(ctx context.Context) ([]domain.E
 }
 
 func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id uint) (*domain.Environment, error) {
-	return s.repo.GetByID(ctx, id)
+	env, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, errors.New("environment not found")
+	}
+	return env, nil
+}
+
+func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id uint, name, description string) (*domain.Environment, error) {
+	env, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, errors.New("environment not found")
+	}
+	if name != "" {
+		env.Name = name
+	}
+	if description != "" {
+		env.Description = description
+	}
+	if err := s.repo.Update(ctx, env); err != nil {
+		return nil, errors.New("failed to update environment")
+	}
+	return env, nil
 }
 
 func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id uint) error {
+	_, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return errors.New("environment not found")
+	}
 	return s.repo.Delete(ctx, id)
 }

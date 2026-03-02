@@ -1,4 +1,8 @@
+# --- Stage 1: Build ---
 FROM golang:1.21-alpine AS builder
+
+# Install gcc for cgo (needed by gorm/postgres)
+RUN apk add --no-cache gcc musl-dev
 
 WORKDIR /app
 
@@ -7,15 +11,17 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o main cmd/api/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o envynce-api ./cmd/api
 
-FROM alpine:latest
+# --- Stage 2: Runtime ---
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
-COPY --from=builder /app/main .
-COPY --from=builder /app/.env .
+COPY --from=builder /app/envynce-api .
 
 EXPOSE 8080
 
-CMD ["./main"]
+ENTRYPOINT ["./envynce-api"]

@@ -34,6 +34,10 @@ func (r *ApplicationRepository) GetByID(ctx context.Context, id uint) (*domain.A
 	return &app, nil
 }
 
+func (r *ApplicationRepository) Update(ctx context.Context, app *domain.Application) error {
+	return r.db.WithContext(ctx).Save(app).Error
+}
+
 func (r *ApplicationRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&domain.Application{}, id).Error
 }

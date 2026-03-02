@@ -34,6 +34,10 @@ func (r *EnvironmentRepository) GetByID(ctx context.Context, id uint) (*domain.E
 	return &env, nil
 }
 
+func (r *EnvironmentRepository) Update(ctx context.Context, env *domain.Environment) error {
+	return r.db.WithContext(ctx).Save(env).Error
+}
+
 func (r *EnvironmentRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&domain.Environment{}, id).Error
 }
