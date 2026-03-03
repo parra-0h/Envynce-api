@@ -41,3 +41,9 @@ func (r *EnvironmentRepository) Update(ctx context.Context, env *domain.Environm
 func (r *EnvironmentRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&domain.Environment{}, id).Error
 }
+
+func (r *EnvironmentRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&domain.Environment{}).Count(&count).Error
+	return count, err
+}

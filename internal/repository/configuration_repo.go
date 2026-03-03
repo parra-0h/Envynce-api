@@ -45,6 +45,15 @@ func (r *ConfigurationRepository) GetAll(ctx context.Context, appID, envID uint)
 	return configs, err
 }
 
+func (r *ConfigurationRepository) GetHistory(ctx context.Context, appID, envID uint, key string) ([]domain.Configuration, error) {
+	var configs []domain.Configuration
+	err := r.db.WithContext(ctx).
+		Where("application_id = ? AND environment_id = ? AND key = ?", appID, envID, key).
+		Order("version DESC").
+		Find(&configs).Error
+	return configs, err
+}
+
 func (r *ConfigurationRepository) GetByID(ctx context.Context, id uint) (*domain.Configuration, error) {
 	var config domain.Configuration
 	err := r.db.WithContext(ctx).Preload("Application").Preload("Environment").First(&config, id).Error
@@ -81,4 +90,22 @@ func (r *ConfigurationRepository) Search(ctx context.Context, appID, envID uint,
 	}
 	err := query.Preload("Application").Preload("Environment").Find(&configs).Error
 	return configs, err
+}
+
+func (r *ConfigurationRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&domain.Configuration{}).Count(&count).Error
+	return count, err
+}
+
+func (r *ConfigurationRepository) CountByStatus(ctx context.Context, status string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&domain.Configuration{}).Where("status = ?", status).Count(&count).Error
+	return count, err
+}
+
+func (r *ConfigurationRepository) GetRecentAuditLogs(ctx context.Context, limit int) ([]domain.AuditLog, error) {
+	var logs []domain.AuditLog
+	err := r.db.WithContext(ctx).Order("created_at DESC").Limit(limit).Find(&logs).Error
+	return logs, err
 }

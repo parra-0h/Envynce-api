@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -16,13 +17,15 @@ type BaseHandler struct {
 	appService    *service.ApplicationService
 	envService    *service.EnvironmentService
 	configService *service.ConfigurationService
+	apiKeyService *service.APIKeyService
 }
 
-func NewBaseHandler(appSvc *service.ApplicationService, envSvc *service.EnvironmentService, configSvc *service.ConfigurationService) *BaseHandler {
+func NewBaseHandler(appSvc *service.ApplicationService, envSvc *service.EnvironmentService, configSvc *service.ConfigurationService, apiKeySvc *service.APIKeyService) *BaseHandler {
 	return &BaseHandler{
 		appService:    appSvc,
 		envService:    envSvc,
 		configService: configSvc,
+		apiKeyService: apiKeySvc,
 	}
 }
 
@@ -201,6 +204,7 @@ func (h *BaseHandler) DeleteEnvironment(w http.ResponseWriter, r *http.Request) 
 func (h *BaseHandler) CreateConfiguration(w http.ResponseWriter, r *http.Request) {
 	var config domain.Configuration
 	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		log.Printf("BACKEND: CreateConfiguration decode error: %v", err)
 		utils.JSONError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
@@ -225,6 +229,13 @@ func (h *BaseHandler) ListConfigurations(w http.ResponseWriter, r *http.Request)
 	envID, _ := strconv.ParseUint(r.URL.Query().Get("environment_id"), 10, 64)
 	search := r.URL.Query().Get("search")
 
+	log.Printf("BACKEND: ListConfigurations called for appID=%d, envID=%d, search=%s", appID, envID, search)
+
+	if appID == 0 || envID == 0 {
+		utils.JSONError(w, http.StatusBadRequest, "application_id and environment_id are required")
+		return
+	}
+
 	var configs []domain.Configuration
 	var err error
 	if search != "" {
@@ -232,6 +243,7 @@ func (h *BaseHandler) ListConfigurations(w http.ResponseWriter, r *http.Request)
 	} else {
 		configs, err = h.configService.GetActiveConfigs(r.Context(), uint(appID), uint(envID))
 	}
+
 	if err != nil {
 		utils.JSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -309,4 +321,92 @@ func (h *BaseHandler) GetConfigVersions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	utils.JSONResponse(w, http.StatusOK, versions, "")
+}
+
+func (h *BaseHandler) GetAuditLogs(w http.ResponseWriter, r *http.Request) {
+	logs, err := h.configService.GetAuditLogs(r.Context())
+	if err != nil {
+		utils.JSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.JSONResponse(w, http.StatusOK, logs, "")
+}
+
+func (h *BaseHandler) GetDashboardStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.configService.GetDashboardStats(r.Context())
+	if err != nil {
+		utils.JSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.JSONResponse(w, http.StatusOK, stats, "")
+}
+
+func (h *BaseHandler) Login(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		utils.JSONError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	// Simple check for demonstration
+	if payload.Email == "parrahans70@gmail.com" {
+		// In a real app we'd check DB and hash passwords
+		utils.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.Et9HFBa_nSYUCPUoKndp1vR-fS-m5W4vI-b6-M_b4-I",
+			"user": map[string]interface{}{
+				"id":    "1",
+				"email": payload.Email,
+				"name":  "Hans Parra",
+				"role":  "admin",
+			},
+		}, "Login successful")
+		return
+	}
+
+	utils.JSONError(w, http.StatusUnauthorized, "Invalid credentials")
+}
+
+func (h *BaseHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		utils.JSONError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	key, err := h.apiKeyService.CreateAPIKey(r.Context(), payload.Name)
+	if err != nil {
+		utils.JSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.JSONResponse(w, http.StatusCreated, key, "API Key generated successfully")
+}
+
+func (h *BaseHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
+	keys, err := h.apiKeyService.GetAllAPIKeys(r.Context())
+	if err != nil {
+		utils.JSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.JSONResponse(w, http.StatusOK, keys, "")
+}
+
+func (h *BaseHandler) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, _ := strconv.Atoi(idStr)
+
+	if id == 0 {
+		utils.JSONError(w, http.StatusBadRequest, "Invalid API Key ID")
+		return
+	}
+
+	if err := h.apiKeyService.RevokeAPIKey(r.Context(), uint(id)); err != nil {
+		utils.JSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.JSONResponse(w, http.StatusOK, nil, "API Key revoked successfully")
 }

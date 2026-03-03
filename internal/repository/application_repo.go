@@ -41,3 +41,9 @@ func (r *ApplicationRepository) Update(ctx context.Context, app *domain.Applicat
 func (r *ApplicationRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&domain.Application{}, id).Error
 }
+
+func (r *ApplicationRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&domain.Application{}).Count(&count).Error
+	return count, err
+}

@@ -34,6 +34,7 @@ func main() {
 	envRepo := repository.NewEnvironmentRepository(db)
 	configRepo := repository.NewConfigurationRepository(db)
 	versionRepo := repository.NewConfigVersionRepository(db)
+	apiKeyRepo := repository.NewAPIKeyRepository(db)
 
 	// ─── Services ────────────────────────────────────────────────────────────────
 	authSvc := service.NewAuthService(userRepo, cfg.JWTSecret)
@@ -41,11 +42,12 @@ func main() {
 	appSvc := service.NewApplicationService(appRepo)
 	envSvc := service.NewEnvironmentService(envRepo)
 	configSvc := service.NewConfigurationService(configRepo, appRepo, envRepo, versionRepo)
+	apiKeySvc := service.NewAPIKeyService(apiKeyRepo)
 
 	// ─── Handlers ────────────────────────────────────────────────────────────────
 	authH := handler.NewAuthHandler(authSvc)
 	userH := handler.NewUserHandler(userSvc)
-	baseH := handler.NewBaseHandler(appSvc, envSvc, configSvc)
+	baseH := handler.NewBaseHandler(appSvc, envSvc, configSvc, apiKeySvc)
 
 	// ─── Router ──────────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -83,6 +85,9 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(cfg.JWTSecret))
 
+			r.Get("/dashboard/stats", baseH.GetDashboardStats)
+			r.Get("/audit-logs", baseH.GetAuditLogs)
+
 			// ── Users (ADMIN only) ──────────────────────────────────────────────
 			r.Route("/users", func(r chi.Router) {
 				r.Use(middleware.RequireRole("admin"))
@@ -118,6 +123,13 @@ func main() {
 				r.With(middleware.RequireRole("admin", "editor")).Post("/", baseH.CreateConfiguration)
 				r.With(middleware.RequireRole("admin", "editor")).Put("/{id}", baseH.UpdateConfiguration)
 				r.With(middleware.RequireRole("admin")).Delete("/{id}", baseH.DeleteConfiguration)
+			})
+
+			// ── API Keys ────────────────────────────────────────────────────────
+			r.Route("/api-keys", func(r chi.Router) {
+				r.Get("/", baseH.ListAPIKeys)
+				r.Post("/", baseH.CreateAPIKey)
+				r.Delete("/{id}", baseH.RevokeAPIKey)
 			})
 		})
 	})

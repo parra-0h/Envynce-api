@@ -22,6 +22,8 @@ func InitDB(dsn string) (*gorm.DB, error) {
 		&domain.Environment{},
 		&domain.Configuration{},
 		&domain.ConfigVersion{},
+		&domain.AuditLog{},
+		&domain.APIKey{},
 	)
 	if err != nil {
 		return nil, err

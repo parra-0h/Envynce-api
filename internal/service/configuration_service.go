@@ -54,6 +54,7 @@ func (s *ConfigurationService) CreateConfiguration(ctx context.Context, config *
 	}
 
 	config.Status = "active"
+	config.CreatedBy = userName
 	if err := s.repo.Create(ctx, config); err != nil {
 		return errors.New("failed to create configuration")
 	}
@@ -73,6 +74,15 @@ func (s *ConfigurationService) CreateConfiguration(ctx context.Context, config *
 
 func (s *ConfigurationService) GetActiveConfigs(ctx context.Context, appID, envID uint) ([]domain.Configuration, error) {
 	return s.repo.GetAll(ctx, appID, envID)
+}
+
+func (s *ConfigurationService) GetConfigurationHistory(ctx context.Context, id uint) ([]domain.Configuration, error) {
+	config, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetHistory(ctx, config.ApplicationID, config.EnvironmentID, config.Key)
 }
 
 func (s *ConfigurationService) GetByID(ctx context.Context, id uint) (*domain.Configuration, error) {
@@ -103,6 +113,7 @@ func (s *ConfigurationService) UpdateConfiguration(ctx context.Context, id uint,
 		EnvironmentID: config.EnvironmentID,
 		Version:       config.Version + 1,
 		Status:        "active",
+		CreatedBy:     userName,
 	}
 	if err := s.repo.Create(ctx, newConfig); err != nil {
 		return nil, errors.New("failed to create new version")
@@ -135,4 +146,43 @@ func (s *ConfigurationService) SearchConfigurations(ctx context.Context, appID, 
 
 func (s *ConfigurationService) GetConfigVersions(ctx context.Context, configID uint) ([]domain.ConfigVersion, error) {
 	return s.versionRepo.GetByConfigID(ctx, configID)
+}
+
+func (s *ConfigurationService) GetAuditLogs(ctx context.Context) ([]domain.AuditLog, error) {
+	return s.repo.GetRecentAuditLogs(ctx, 50)
+}
+
+func (s *ConfigurationService) GetDashboardStats(ctx context.Context) (*domain.DashboardStats, error) {
+	totalApps, err := s.appRepo.Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	totalEnvs, err := s.envRepo.Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	totalConfigs, err := s.repo.Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	activeConfigs, err := s.repo.CountByStatus(ctx, "active")
+	if err != nil {
+		return nil, err
+	}
+
+	recentUpdates, err := s.repo.GetRecentAuditLogs(ctx, 5)
+	if err != nil {
+		return nil, err
+	}
+
+	return &domain.DashboardStats{
+		TotalApps:         totalApps,
+		TotalConfigs:      totalConfigs,
+		ActiveConfigs:     activeConfigs,
+		TotalEnvironments: totalEnvs,
+		RecentUpdates:     recentUpdates,
+	}, nil
 }
