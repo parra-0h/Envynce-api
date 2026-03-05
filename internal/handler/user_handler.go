@@ -19,6 +19,27 @@ func NewUserHandler(userSvc *service.UserService) *UserHandler {
 	return &UserHandler{userService: userSvc}
 }
 
+// POST /api/v1/users
+func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	var req domain.RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.JSONError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+	if err := validate.Struct(req); err != nil {
+		utils.JSONError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	user, err := h.userService.CreateUser(r.Context(), &req)
+	if err != nil {
+		utils.JSONError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	utils.JSONResponse(w, http.StatusCreated, user, "User created successfully")
+}
+
 // GET /api/v1/users
 func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.userService.GetAllUsers(r.Context())

@@ -16,6 +16,12 @@ func InitDB(dsn string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	// Pre-migration cleanup: remove old api_keys rows that have no hashed_key
+	// (created before secure hashing was introduced — they are unusable).
+	db.Exec(`DELETE FROM api_keys WHERE hashed_key IS NULL OR hashed_key = ''`)
+	// Drop the old unique index if it exists so AutoMigrate can recreate it cleanly.
+	db.Exec(`DROP INDEX IF EXISTS idx_api_keys_hashed_key`)
+
 	// Auto Migration
 	err = db.AutoMigrate(
 		&domain.User{},
@@ -25,6 +31,7 @@ func InitDB(dsn string) (*gorm.DB, error) {
 		&domain.ConfigVersion{},
 		&domain.AuditLog{},
 		&domain.APIKey{},
+		&domain.RequestLog{},
 	)
 	if err != nil {
 		return nil, err

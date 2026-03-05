@@ -370,15 +370,18 @@ func (h *BaseHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BaseHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
-	var payload struct {
-		Name string `json:"name"`
-	}
+	var payload domain.APIKeyCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		utils.JSONError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
 
-	key, err := h.apiKeyService.CreateAPIKey(r.Context(), payload.Name)
+	if payload.Name == "" {
+		utils.JSONError(w, http.StatusUnprocessableEntity, "name is required")
+		return
+	}
+
+	key, err := h.apiKeyService.CreateAPIKey(r.Context(), payload)
 	if err != nil {
 		utils.JSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -409,4 +412,25 @@ func (h *BaseHandler) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	utils.JSONResponse(w, http.StatusOK, nil, "API Key revoked successfully")
+}
+
+func (h *BaseHandler) RestoreConfigVersion(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, _ := strconv.Atoi(idStr)
+
+	if id == 0 {
+		utils.JSONError(w, http.StatusBadRequest, "Invalid version ID")
+		return
+	}
+
+	userID := middleware.GetUserID(r.Context())
+	userName := middleware.GetUserName(r.Context())
+
+	config, err := h.configService.RestoreVersion(r.Context(), uint(id), userID, userName)
+	if err != nil {
+		utils.JSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	utils.JSONResponse(w, http.StatusOK, config, "Configuration restored successfully")
 }

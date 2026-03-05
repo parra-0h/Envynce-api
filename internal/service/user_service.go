@@ -6,6 +6,7 @@ import (
 
 	"github.com/hans/config-service/internal/domain"
 	"github.com/hans/config-service/internal/repository"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserService struct {
@@ -46,6 +47,33 @@ func (s *UserService) UpdateUser(ctx context.Context, id uint, req *domain.Updat
 
 	if err := s.repo.Update(ctx, user); err != nil {
 		return nil, errors.New("failed to update user")
+	}
+
+	return user, nil
+}
+
+func (s *UserService) CreateUser(ctx context.Context, req *domain.RegisterRequest) (*domain.User, error) {
+	// Check if email already exists
+	_, err := s.repo.FindByEmail(ctx, req.Email)
+	if err == nil {
+		return nil, errors.New("email already registered")
+	}
+
+	// Hash password
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, errors.New("failed to hash password")
+	}
+
+	user := &domain.User{
+		Name:     req.Name,
+		Email:    req.Email,
+		Password: string(hashed),
+		Role:     req.Role,
+	}
+
+	if err := s.repo.Create(ctx, user); err != nil {
+		return nil, errors.New("failed to create user")
 	}
 
 	return user, nil

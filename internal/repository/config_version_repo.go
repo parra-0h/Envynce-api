@@ -23,7 +23,16 @@ func (r *ConfigVersionRepository) GetByConfigID(ctx context.Context, configID ui
 	var versions []domain.ConfigVersion
 	err := r.db.WithContext(ctx).
 		Where("configuration_id = ?", configID).
-		Order("version DESC").
+		Order("version_number DESC").
 		Find(&versions).Error
 	return versions, err
+}
+
+func (r *ConfigVersionRepository) GetByID(ctx context.Context, id uint) (*domain.ConfigVersion, error) {
+	var v domain.ConfigVersion
+	err := r.db.WithContext(ctx).First(&v, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
 }

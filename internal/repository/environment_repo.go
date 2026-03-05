@@ -25,6 +25,15 @@ func (r *EnvironmentRepository) GetAll(ctx context.Context) ([]domain.Environmen
 	return envs, err
 }
 
+func (r *EnvironmentRepository) GetByName(ctx context.Context, name string) (*domain.Environment, error) {
+	var env domain.Environment
+	err := r.db.WithContext(ctx).Where("name = ?", name).First(&env).Error
+	if err != nil {
+		return nil, err
+	}
+	return &env, nil
+}
+
 func (r *EnvironmentRepository) GetByID(ctx context.Context, id uint) (*domain.Environment, error) {
 	var env domain.Environment
 	err := r.db.WithContext(ctx).First(&env, id).Error

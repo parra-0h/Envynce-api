@@ -1,3 +1,11 @@
+// @title Envynce Configuration Service API
+// @version 1.0
+// @description API for managing and consuming configurations across multiple environments.
+// @host localhost:8080
+// @BasePath /api/v1
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 package main
 
 import (
@@ -35,19 +43,27 @@ func main() {
 	configRepo := repository.NewConfigurationRepository(db)
 	versionRepo := repository.NewConfigVersionRepository(db)
 	apiKeyRepo := repository.NewAPIKeyRepository(db)
+	auditRepo := repository.NewAuditLogRepository(db)
+	requestLogRepo := repository.NewRequestLogRepository(db)
 
 	// ─── Services ────────────────────────────────────────────────────────────────
 	authSvc := service.NewAuthService(userRepo, cfg.JWTSecret)
 	userSvc := service.NewUserService(userRepo)
 	appSvc := service.NewApplicationService(appRepo)
 	envSvc := service.NewEnvironmentService(envRepo)
-	configSvc := service.NewConfigurationService(configRepo, appRepo, envRepo, versionRepo)
+	configSvc := service.NewConfigurationService(configRepo, appRepo, envRepo, versionRepo, auditRepo)
 	apiKeySvc := service.NewAPIKeyService(apiKeyRepo)
+	metricsSvc := service.NewMetricsService(requestLogRepo)
 
 	// ─── Handlers ────────────────────────────────────────────────────────────────
 	authH := handler.NewAuthHandler(authSvc)
 	userH := handler.NewUserHandler(userSvc)
 	baseH := handler.NewBaseHandler(appSvc, envSvc, configSvc, apiKeySvc)
+	publicH := handler.NewPublicHandler(configSvc, metricsSvc)
+	metricsH := handler.NewMetricsHandler(metricsSvc)
+
+	// Rate Limiter (Level 3): 100 requests per minute
+	rateLimiter := middleware.NewRateLimiter(100, time.Minute)
 
 	// ─── Router ──────────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -64,7 +80,7 @@ func main() {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Authorization, x-api-key")
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusOK)
 				return
@@ -81,16 +97,21 @@ func main() {
 		r.Post("/auth/register", authH.Register)
 		r.Post("/auth/login", authH.Login)
 
+		// Public API for config (Validated with API Key)
+		r.With(middleware.APIKeyAuth(apiKeySvc), rateLimiter.Middleware).Get("/config", publicH.GetConfig)
+
 		// Protected routes (JWT required)
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(cfg.JWTSecret))
 
 			r.Get("/dashboard/stats", baseH.GetDashboardStats)
 			r.Get("/audit-logs", baseH.GetAuditLogs)
+			r.Get("/metrics/requests-per-minute", metricsH.GetRequestsPerMinute)
 
 			// ── Users (ADMIN only) ──────────────────────────────────────────────
 			r.Route("/users", func(r chi.Router) {
 				r.Use(middleware.RequireRole("admin"))
+				r.Post("/", userH.CreateUser)
 				r.Get("/", userH.ListUsers)
 				r.Get("/{id}", userH.GetUser)
 				r.Put("/{id}", userH.UpdateUser)
@@ -101,8 +122,8 @@ func main() {
 			r.Route("/applications", func(r chi.Router) {
 				r.Get("/", baseH.ListApplications)
 				r.Get("/{id}", baseH.GetApplication)
-				r.With(middleware.RequireRole("admin", "editor")).Post("/", baseH.CreateApplication)
-				r.With(middleware.RequireRole("admin", "editor")).Put("/{id}", baseH.UpdateApplication)
+				r.With(middleware.RequireRole("admin", "developer")).Post("/", baseH.CreateApplication)
+				r.With(middleware.RequireRole("admin", "developer")).Put("/{id}", baseH.UpdateApplication)
 				r.With(middleware.RequireRole("admin")).Delete("/{id}", baseH.DeleteApplication)
 			})
 
@@ -110,8 +131,8 @@ func main() {
 			r.Route("/environments", func(r chi.Router) {
 				r.Get("/", baseH.ListEnvironments)
 				r.Get("/{id}", baseH.GetEnvironment)
-				r.With(middleware.RequireRole("admin", "editor")).Post("/", baseH.CreateEnvironment)
-				r.With(middleware.RequireRole("admin", "editor")).Put("/{id}", baseH.UpdateEnvironment)
+				r.With(middleware.RequireRole("admin", "developer")).Post("/", baseH.CreateEnvironment)
+				r.With(middleware.RequireRole("admin", "developer")).Put("/{id}", baseH.UpdateEnvironment)
 				r.With(middleware.RequireRole("admin")).Delete("/{id}", baseH.DeleteEnvironment)
 			})
 
@@ -120,16 +141,17 @@ func main() {
 				r.Get("/", baseH.ListConfigurations)
 				r.Get("/{id}", baseH.GetConfiguration)
 				r.Get("/{id}/versions", baseH.GetConfigVersions)
-				r.With(middleware.RequireRole("admin", "editor")).Post("/", baseH.CreateConfiguration)
-				r.With(middleware.RequireRole("admin", "editor")).Put("/{id}", baseH.UpdateConfiguration)
-				r.With(middleware.RequireRole("admin")).Delete("/{id}", baseH.DeleteConfiguration)
+				r.With(middleware.RequireRole("admin", "developer")).Post("/versions/{id}/restore", baseH.RestoreConfigVersion)
+				r.With(middleware.RequireRole("admin", "developer")).Post("/", baseH.CreateConfiguration)
+				r.With(middleware.RequireRole("admin", "developer")).Put("/{id}", baseH.UpdateConfiguration)
+				r.With(middleware.RequireRole("admin", "developer")).Delete("/{id}", baseH.DeleteConfiguration)
 			})
 
 			// ── API Keys ────────────────────────────────────────────────────────
 			r.Route("/api-keys", func(r chi.Router) {
 				r.Get("/", baseH.ListAPIKeys)
-				r.Post("/", baseH.CreateAPIKey)
-				r.Delete("/{id}", baseH.RevokeAPIKey)
+				r.With(middleware.RequireRole("admin", "developer")).Post("/", baseH.CreateAPIKey)
+				r.With(middleware.RequireRole("admin")).Delete("/{id}", baseH.RevokeAPIKey)
 			})
 		})
 	})

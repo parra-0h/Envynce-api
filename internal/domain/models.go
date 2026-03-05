@@ -11,9 +11,9 @@ import (
 type RoleType string
 
 const (
-	RoleAdmin  RoleType = "admin"
-	RoleEditor RoleType = "editor"
-	RoleViewer RoleType = "viewer"
+	RoleAdmin     RoleType = "admin"
+	RoleDeveloper RoleType = "developer"
+	RoleViewer    RoleType = "viewer"
 )
 
 // --- User ---
@@ -23,7 +23,7 @@ type User struct {
 	Name      string         `gorm:"not null" json:"name" validate:"required,min=2"`
 	Email     string         `gorm:"uniqueIndex;not null" json:"email" validate:"required,email"`
 	Password  string         `gorm:"not null" json:"-"`
-	Role      RoleType       `gorm:"type:varchar(20);not null;default:'viewer'" json:"role" validate:"required,oneof=admin editor viewer"`
+	Role      RoleType       `gorm:"type:varchar(20);not null;default:'viewer'" json:"role" validate:"required,oneof=admin developer viewer"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -74,27 +74,28 @@ type Configuration struct {
 // --- Config Version (audit history) ---
 
 type ConfigVersion struct {
-	ID              uint      `gorm:"primaryKey" json:"id"`
-	ConfigurationID uint      `gorm:"not null;index" json:"configuration_id"`
-	Key             string    `gorm:"not null" json:"key"`
-	Value           string    `gorm:"type:text" json:"value"`
-	Version         int       `gorm:"not null" json:"version"`
-	ChangedByUserID uint      `json:"changed_by_user_id"`
-	ChangedByName   string    `json:"changed_by_name"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              uint           `gorm:"primaryKey" json:"id"`
+	ConfigurationID uint           `gorm:"not null;index" json:"configuration_id"`
+	Key             string         `gorm:"not null" json:"key"`
+	Value           string         `gorm:"type:text" json:"value"`
+	Description     string         `gorm:"type:text" json:"description"`
+	Active          bool           `json:"active"`
+	VersionNumber   int            `gorm:"not null;default:0" json:"version_number"`
+	CreatedAt       time.Time      `json:"created_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // --- Audit Log ---
 
 type AuditLog struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Action    string    `json:"action"` // CREATE, UPDATE, DELETE
-	Entity    string    `json:"entity"` // Application, Environment, Configuration
-	EntityID  uint      `json:"entity_id"`
-	OldValue  string    `gorm:"type:text" json:"old_value"`
-	NewValue  string    `gorm:"type:text" json:"new_value"`
-	ChangedBy string    `json:"changed_by"` // API Key or User identifier
-	CreatedAt time.Time `json:"created_at"`
+	ID         uint           `gorm:"primaryKey" json:"id"`
+	UserID     uint           `json:"user_id"`
+	Action     string         `json:"action"` // CREATE, UPDATE, DELETE, LOGIN, LOGIN_FAILED, GENERATE_KEY, REVOKE_KEY
+	EntityType string         `json:"entity_type"`
+	EntityID   uint           `json:"entity_id"`
+	Metadata   string         `gorm:"type:jsonb" json:"metadata"` // JSON string for flexibility
+	CreatedAt  time.Time      `json:"created_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // --- API Key ---
@@ -102,16 +103,30 @@ type AuditLog struct {
 type APIKey struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
 	Name      string         `json:"name"`
-	Key       string         `gorm:"uniqueIndex;not null" json:"key"`
-	Prefix    string         `json:"prefix"`
-	Status    string         `json:"status"` // active, revoked
+	HashedKey string         `gorm:"uniqueIndex;not null;default:''" json:"-"`
+	PlainKey  string         `gorm:"-" json:"key,omitempty"` // Only for response ONCE
+	Prefix    string         `gorm:"default:''" json:"prefix"`
+	Status    string         `gorm:"default:'active'" json:"status"` // active, revoked
+	ExpiresAt *time.Time     `json:"expires_at"`
 	LastUsed  *time.Time     `json:"last_used"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+	Applications []Application `gorm:"many2many:api_key_applications;" json:"applications"`
 }
 
-// --- Dashboard Stats ---
+// --- Request Log ---
+
+type RequestLog struct {
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	APIKeyID      uint      `gorm:"index" json:"api_key_id"`
+	ApplicationID uint      `gorm:"index" json:"application_id"`
+	EnvironmentID uint      `gorm:"index" json:"environment_id"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// --- DTOs ---
 
 type DashboardStats struct {
 	TotalApps         int64      `json:"total_apps"`
@@ -121,13 +136,11 @@ type DashboardStats struct {
 	RecentUpdates     []AuditLog `json:"recent_updates"`
 }
 
-// --- DTOs ---
-
 type RegisterRequest struct {
 	Name     string   `json:"name" validate:"required,min=2"`
 	Email    string   `json:"email" validate:"required,email"`
 	Password string   `json:"password" validate:"required,min=8"`
-	Role     RoleType `json:"role" validate:"required,oneof=admin editor viewer"`
+	Role     RoleType `json:"role" validate:"required,oneof=admin developer viewer"`
 }
 
 type LoginRequest struct {
@@ -143,10 +156,21 @@ type LoginResponse struct {
 type UpdateUserRequest struct {
 	Name  string   `json:"name" validate:"omitempty,min=2"`
 	Email string   `json:"email" validate:"omitempty,email"`
-	Role  RoleType `json:"role" validate:"omitempty,oneof=admin editor viewer"`
+	Role  RoleType `json:"role" validate:"omitempty,oneof=admin developer viewer"`
 }
 
 type UpdateConfigRequest struct {
 	Value       string `json:"value" validate:"required"`
 	Description string `json:"description"`
+}
+
+type APIKeyCreateRequest struct {
+	Name           string     `json:"name" validate:"required"`
+	ApplicationIDs []uint     `json:"application_ids"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+}
+
+type MetricResponse struct {
+	Timestamp time.Time `json:"timestamp"`
+	Count     int64     `json:"count"`
 }

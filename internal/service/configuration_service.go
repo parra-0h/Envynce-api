@@ -13,6 +13,7 @@ type ConfigurationService struct {
 	appRepo     *repository.ApplicationRepository
 	envRepo     *repository.EnvironmentRepository
 	versionRepo *repository.ConfigVersionRepository
+	auditRepo   *repository.AuditLogRepository
 }
 
 func NewConfigurationService(
@@ -20,12 +21,14 @@ func NewConfigurationService(
 	appRepo *repository.ApplicationRepository,
 	envRepo *repository.EnvironmentRepository,
 	versionRepo *repository.ConfigVersionRepository,
+	auditRepo *repository.AuditLogRepository,
 ) *ConfigurationService {
 	return &ConfigurationService{
 		repo:        repo,
 		appRepo:     appRepo,
 		envRepo:     envRepo,
 		versionRepo: versionRepo,
+		auditRepo:   auditRepo,
 	}
 }
 
@@ -60,16 +63,41 @@ func (s *ConfigurationService) CreateConfiguration(ctx context.Context, config *
 	}
 
 	// Save version snapshot
-	s.versionRepo.Create(ctx, &domain.ConfigVersion{
+	_ = s.versionRepo.Create(ctx, &domain.ConfigVersion{
 		ConfigurationID: config.ID,
 		Key:             config.Key,
 		Value:           config.Value,
-		Version:         config.Version,
-		ChangedByUserID: userID,
-		ChangedByName:   userName,
+		Description:     config.Description,
+		Active:          true,
+		VersionNumber:   config.Version,
 	})
 
+	// Audit Log
+	_ = s.auditRepo.LogAction(ctx, userID, "CREATE", "Configuration", config.ID, config)
+
 	return nil
+}
+
+func (s *ConfigurationService) GetConfigsAsMap(ctx context.Context, appName, envName string) (map[string]string, uint, uint, error) {
+	app, err := s.appRepo.GetByName(ctx, appName)
+	if err != nil {
+		return nil, 0, 0, errors.New("application not found")
+	}
+	env, err := s.envRepo.GetByName(ctx, envName)
+	if err != nil {
+		return nil, 0, 0, errors.New("environment not found")
+	}
+
+	configs, err := s.repo.GetAll(ctx, app.ID, env.ID)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	result := make(map[string]string)
+	for _, c := range configs {
+		result[c.Key] = c.Value
+	}
+	return result, app.ID, env.ID, nil
 }
 
 func (s *ConfigurationService) GetActiveConfigs(ctx context.Context, appID, envID uint) ([]domain.Configuration, error) {
@@ -120,24 +148,32 @@ func (s *ConfigurationService) UpdateConfiguration(ctx context.Context, id uint,
 	}
 
 	// Save version snapshot
-	s.versionRepo.Create(ctx, &domain.ConfigVersion{
+	_ = s.versionRepo.Create(ctx, &domain.ConfigVersion{
 		ConfigurationID: newConfig.ID,
 		Key:             newConfig.Key,
 		Value:           newConfig.Value,
-		Version:         newConfig.Version,
-		ChangedByUserID: userID,
-		ChangedByName:   userName,
+		Description:     newConfig.Description,
+		Active:          true,
+		VersionNumber:   newConfig.Version,
 	})
+
+	// Audit Log
+	_ = s.auditRepo.LogAction(ctx, userID, "UPDATE", "Configuration", newConfig.ID, newConfig)
 
 	return newConfig, nil
 }
 
 func (s *ConfigurationService) DeleteConfiguration(ctx context.Context, id uint) error {
-	_, err := s.repo.GetByID(ctx, id)
+	config, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return errors.New("configuration not found")
 	}
-	return s.repo.Delete(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+	// Audit Log
+	_ = s.auditRepo.LogAction(ctx, 0, "DELETE", "Configuration", id, config)
+	return nil
 }
 
 func (s *ConfigurationService) SearchConfigurations(ctx context.Context, appID, envID uint, keyword string) ([]domain.Configuration, error) {
@@ -149,34 +185,15 @@ func (s *ConfigurationService) GetConfigVersions(ctx context.Context, configID u
 }
 
 func (s *ConfigurationService) GetAuditLogs(ctx context.Context) ([]domain.AuditLog, error) {
-	return s.repo.GetRecentAuditLogs(ctx, 50)
+	return s.auditRepo.GetAll(ctx, 50)
 }
 
 func (s *ConfigurationService) GetDashboardStats(ctx context.Context) (*domain.DashboardStats, error) {
-	totalApps, err := s.appRepo.Count(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	totalEnvs, err := s.envRepo.Count(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	totalConfigs, err := s.repo.Count(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	activeConfigs, err := s.repo.CountByStatus(ctx, "active")
-	if err != nil {
-		return nil, err
-	}
-
-	recentUpdates, err := s.repo.GetRecentAuditLogs(ctx, 5)
-	if err != nil {
-		return nil, err
-	}
+	totalApps, _ := s.appRepo.Count(ctx)
+	totalEnvs, _ := s.envRepo.Count(ctx)
+	totalConfigs, _ := s.repo.Count(ctx)
+	activeConfigs, _ := s.repo.CountByStatus(ctx, "active")
+	recentUpdates, _ := s.auditRepo.GetAll(ctx, 5)
 
 	return &domain.DashboardStats{
 		TotalApps:         totalApps,
@@ -185,4 +202,62 @@ func (s *ConfigurationService) GetDashboardStats(ctx context.Context) (*domain.D
 		TotalEnvironments: totalEnvs,
 		RecentUpdates:     recentUpdates,
 	}, nil
+}
+func (s *ConfigurationService) RestoreVersion(ctx context.Context, versionID uint, userID uint, userName string) (*domain.Configuration, error) {
+	// 1. Get the version to restore
+	version, err := s.versionRepo.GetByID(ctx, versionID)
+	if err != nil {
+		return nil, errors.New("version history entry not found")
+	}
+
+	// 2. Get the current active configuration for this key/app/env
+	// We need to find the configuration that this version belongs to.
+	// Actually, version.ConfigurationID points to A specific configuration record.
+	// But we want the LATEST record for that Key/App/Env to archive it.
+	config, err := s.repo.GetByID(ctx, version.ConfigurationID)
+	if err != nil {
+		return nil, errors.New("parent configuration not found")
+	}
+
+	latest, err := s.repo.GetLatest(ctx, config.ApplicationID, config.EnvironmentID, config.Key)
+	if err != nil {
+		return nil, errors.New("failed to find current active version")
+	}
+
+	// 3. Archive current latest
+	if latest.Status == "active" {
+		if err := s.repo.UpdateStatus(ctx, latest.ID, "archived"); err != nil {
+			return nil, errors.New("failed to archive current version")
+		}
+	}
+
+	// 4. Create new version based on history
+	newConfig := &domain.Configuration{
+		Key:           version.Key,
+		Value:         version.Value,
+		Description:   version.Description,
+		ApplicationID: config.ApplicationID,
+		EnvironmentID: config.EnvironmentID,
+		Version:       latest.Version + 1,
+		Status:        "active",
+		CreatedBy:     userName,
+	}
+	if err := s.repo.Create(ctx, newConfig); err != nil {
+		return nil, errors.New("failed to create restored version")
+	}
+
+	// 5. Save version snapshot
+	_ = s.versionRepo.Create(ctx, &domain.ConfigVersion{
+		ConfigurationID: newConfig.ID,
+		Key:             newConfig.Key,
+		Value:           newConfig.Value,
+		Description:     newConfig.Description,
+		Active:          true,
+		VersionNumber:   newConfig.Version,
+	})
+
+	// 6. Audit Log
+	_ = s.auditRepo.LogAction(ctx, userID, "RESTORE", "Configuration", newConfig.ID, newConfig)
+
+	return newConfig, nil
 }

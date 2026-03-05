@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
@@ -55,9 +56,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.authService.Login(r.Context(), &req)
 	if err != nil {
+		log.Printf("LOGIN FAILED for %s: %v", req.Email, err)
 		utils.JSONError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
+	log.Printf("LOGIN SUCCESS for %s", req.Email)
 
 	utils.JSONResponse(w, http.StatusOK, resp, "Login successful")
 }

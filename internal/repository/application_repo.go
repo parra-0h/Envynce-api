@@ -25,6 +25,15 @@ func (r *ApplicationRepository) GetAll(ctx context.Context) ([]domain.Applicatio
 	return apps, err
 }
 
+func (r *ApplicationRepository) GetByName(ctx context.Context, name string) (*domain.Application, error) {
+	var app domain.Application
+	err := r.db.WithContext(ctx).Where("name = ?", name).First(&app).Error
+	if err != nil {
+		return nil, err
+	}
+	return &app, nil
+}
+
 func (r *ApplicationRepository) GetByID(ctx context.Context, id uint) (*domain.Application, error) {
 	var app domain.Application
 	err := r.db.WithContext(ctx).First(&app, id).Error
